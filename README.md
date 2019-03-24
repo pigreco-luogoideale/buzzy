@@ -37,17 +37,20 @@ to check that `10.42.0.1` is your ip address as well when you run a WiFi
 hotspot, or this will not work.
 
 3. Start your hotspot connection:
-
-	nmcli conn up Hotspot
+```
+nmcli conn up Hotspot
+```
 
 4. To run your game on port 80 and have users to connect without writing the
    port, ensure your firewall let incoming traffic on port 80, or disable it
-
-	sudo systemctl stop firewalld.service
+```
+sudo systemctl stop firewalld.service
+```
 
 5. Now, we are ready to start the actual server (optionally in a virtualenv):
-
-	REDIS=$(sudo docker run -d --rm --network=host redis:alpine)
-	sudo uvicorn --host=0.0.0.0 --port=80 buzzy.main:app
-	sudo docker stop $REDIS
+```
+REDIS=$(sudo docker run -d --rm --network=host redis:alpine)
+sudo uvicorn --host=0.0.0.0 --port=80 buzzy.main:app
+sudo docker stop $REDIS
+```
 
