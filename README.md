@@ -27,9 +27,10 @@ type `http://game`. This helps a lot when the audience is non-technical.
    want to use a 3rd party network.
 
 2. Configure NetworkManager's dnsmasq by creating the following file:
-
-    # /etc/NetworkManager/dnsmasq-shared.d/hosts.conf
-    address=/game/10.42.0.1
+```
+# /etc/NetworkManager/dnsmasq-shared.d/hosts.conf
+address=/game/10.42.0.1
+```
 
 where `game` is the host name that will be redirected to `10.42.0.1`. Be sure
 to check that `10.42.0.1` is your ip address as well when you run a WiFi
