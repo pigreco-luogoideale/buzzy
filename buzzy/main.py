@@ -1,3 +1,7 @@
+# TODO
+# - Interfaccia host
+# - Sul server
+
 import time
 import redis
 import pickle
@@ -184,7 +188,7 @@ server_template = Template("""\
             document.getElementById('siren').play();
         }
 
-        function animateCooldown(player, duration) {
+        function animateCooldown(player, duration, done) {
             var start = null;
             var element = document.getElementById("team_" + player);
 
@@ -195,6 +199,15 @@ server_template = Template("""\
                 element.style.width = (progress * 100) + '%';
                 if (progress <= 1)
                     window.requestAnimationFrame(step);
+                else {
+                /*
+                    var i = document.disabled.indexOf(data.team_name);
+                    if (i > -1) {
+                        document.disabled = document.disabled.slice(0, i).concat(document.disabled.slice(i+1, document.disabled.length));
+                        console.log("Disabled is now", document.disabled);
+                    }
+                */
+                }
             }
             window.requestAnimationFrame(step);
         }
@@ -202,6 +215,7 @@ server_template = Template("""\
         function runWebsockets() {
             if ("WebSocket" in window) {
                 var ws = new WebSocket("ws://{{wsaddr}}/ws/{{cooldown}}/{{register}}");
+                document.disabled = [];
                 ws.onopen = function() {
                     console.log("Websocket connection open");
                     showText("Waiting for players to join...");
@@ -231,12 +245,22 @@ server_template = Template("""\
                         return;
                     }
 
+
+                    /*
+                    for (var j = 0; j < document.disabled.length; j++) {
+                        if (document.disabled[j] == data.team_name) {
+                            return;
+                        }
+                    }
+                    document.disabled.push(data.team_name);
+                    */
                     document.receiving = false;
                     siren();
                     showText(data.team_name);
+                    // document.disabled.push(data.team_name);
                     animateCooldown(data.team_name, data.cooldown * 1000);
                     document.body.style.backgroundColor = data.color;
-                    setTimeout(reset, 2000);  // Reset color background
+                    setTimeout(reset, 4000);  // Reset color background
                 };
                 ws.onclose = function() { 
                     console.log("Closing websocket connection");
@@ -292,6 +316,7 @@ async def server_page(request):
     register = request.path_params.get('register', 123)
     return HTMLResponse(server_template.render(cooldown=cooldown,
                                                register=register,
+                                               anstime=4000,
                                                address='http://pigioco',
                                                wsaddr=request.url.netloc))
 
@@ -312,9 +337,8 @@ async def process_ws(websocket):
     })
 
     cooldown = int(websocket.path_params['cooldown'])
-    # print("WEBSOCKET REQUEST", cooldown)
+    print("WEBSOCKET REQUEST", cooldown)
     cooldowns = {}
-
 
     # Current team being displayed
 
@@ -338,15 +362,16 @@ async def process_ws(websocket):
                 continue
 
             # Check if team is valid
-            if team not in cooldowns:
-                continue # Discard message, invalid team
+            #if team not in cooldowns:
+            #    continue # Discard message, invalid team
 
             # Check cooldown
-            if time.time() < cooldowns[team]:
-                print("Ignoring team on cooldown", team)
-                continue
+            #if time.time() < cooldowns[team]:
+            #    print("Ignoring team on cooldown", time.time(), team)
+            #    continue
 
-            cooldowns[team] = time.time() + cooldown
+            #cooldowns[team] = time.time() + cooldown
+            #print("Set team cooldown to", cooldowns[team], "now it is", time.time())
 
             await websocket.send_json({
                 'command': 'answer',
