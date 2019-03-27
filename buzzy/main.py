@@ -157,8 +157,12 @@ server_template = Template("""\
                     showText(done_text);
                     return;
                 }
-                showText(wait_text.replace('{{duration}}', duration));
-                setTimeout(countdown(text, duration-1), 1000);
+                var text = String(wait_text);
+                text = text.replace("%%", String(duration));
+                console.log("Writing", wait_text, typeof(wait_text));
+                console.log(text, typeof(text));
+                showText(text);
+                setTimeout(countdown(wait_text, done_text, duration-1), 1000);
             };
         }
         function addPlayer(color, team_name) {
@@ -228,7 +232,7 @@ server_template = Template("""\
                             setTimeout(function() {
                                 showText(data.reset_text || "Get ready...");
                                 document.body.style.backgroundColor = 'black';
-                            }, data.reset);
+                            }, data.reset * 1000);
                         }
                         break;
                     default:
@@ -303,44 +307,51 @@ async def process_ws(websocket):
     p.subscribe('server')
 
     # Manage teams
-    accepting_duration = int(websocket.path_params['register'])
-    accepting_time = time.time() + accepting_duration
+    join_duration = int(websocket.path_params['register'])
+    join_time = time.time() + join_duration
     await websocket.send_json({
         'command': 'countdown',
-        'duration': accepting_duration,
-        'wait_text': 'Waiting for player
+        'duration': join_duration,
+        'wait_text': 'Waiting for players, %% seconds left.',
+        'done_text': 'Get ready!',
     })
+    # Or use command show to see unlimited text
 
     cooldown = int(websocket.path_params['cooldown'])
     # print("WEBSOCKET REQUEST", cooldown)
     cooldowns = {}
+
+    # Time each player has to answer, in seconds
+    answer_time = 3
+    accepting_time = time.time()
 
     # Current team being displayed
     '''
     case 'show':
         showText(data.text);
         break;
-    case 'player':
-        console.log("Adding player");
-        addPlayer(data.color, data.team_name);
-        break;
-    case 'countdown':
-        console.log("Countdown");
-        setTimeout(countdown(data.wait_text, data.done_text, data.duration), 1000);
-        break;
     case 'buzz':
+        Parameters:
+            data.siren, optional, bool (default to true)
+            data.team_name, mandatory, str
+            data.cooldown, mandatory, int (seconds)
+            data.color, mandatory, str
+            data.reset, optional, int (seconds)
+            data.reset_text ["Get ready"]
     '''
 
     # Process incoming messages
     while True:
         m = p.get_message()
         if m and m['type'] == 'message':
+            print("Got message at time", time.time())
             team = pickle.loads(m['data'])
 
             # When accepting teams, just add team to dict
-            if time.time() < accepting_time:
+            if time.time() < join_time:
                 print("Still accepting...")
                 if team not in cooldowns:
+                    print("Accepted new player", team)
                     await websocket.send_json({
                         'command': 'player',
                         'color': team[0],
@@ -350,22 +361,32 @@ async def process_ws(websocket):
                 await asyncio.sleep(0.1)
                 continue
 
-            # Check if team is valid
+            # We got a buzz message from a player
+            # Are we accepting answers?
+            if accepting_time >= time.time():
+                print("We are not accepting answers yet, will do at", accepting_time)
+                continue
+
+            # Check if team was registered
             if team not in cooldowns:
+                print("Unknown team", team)
                 continue # Discard message, invalid team
 
-            # Check cooldown
+            # Ensure team is not on cooldown
             if time.time() < cooldowns[team]:
                 print("Ignoring team on cooldown", team)
                 continue
 
+            # Ok, team can answer! Lock answers and set cooldown
+            accepting_time = time.time() + answer_time
             cooldowns[team] = time.time() + cooldown
 
             await websocket.send_json({
-                'command': 'answer',
+                'command': 'buzz',
                 'color': team[0],
                 'team_name': team[1],
-                'cooldown': cooldown,
+                'cooldown': cooldown,  # Player goes in cooldown
+                'reset': answer_time,  # Wait some time before resetting color
             })
         await asyncio.sleep(0.1)
     await websocket.close()
