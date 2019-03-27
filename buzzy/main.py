@@ -1,3 +1,7 @@
+# Console per admin
+# Responsive se diventa alta e stretta
+# Server-driven
+
 import time
 import redis
 import pickle
@@ -147,20 +151,14 @@ server_template = Template("""\
         function showText(msg) {
             document.getElementById("display").innerText = msg;
         }
-        function reset() {
-            showText("Get ready...");
-            document.body.style.backgroundColor = 'black';
-            document.receiving = true;
-        }
-        function countdown(duration) {
+        function countdown(wait_text, done_text, duration) {
             return function() {
-                if (duration < 0) {
-                    document.receiving = true;
-                    showText("Get ready...");
+                if (duration < 1) {
+                    showText(done_text);
                     return;
                 }
-                showText("Waiting players, " + duration + " seconds left. {{address}}");
-                setTimeout(countdown(duration-1), 1000);
+                showText(wait_text.replace('{{duration}}', duration));
+                setTimeout(countdown(text, duration-1), 1000);
             };
         }
         function addPlayer(color, team_name) {
@@ -178,10 +176,6 @@ server_template = Template("""\
 
             document.getElementById("teams").appendChild(divOut);
             console.log("Registered team", color, team_name);
-        }
-
-        function siren() {
-            document.getElementById('siren').play();
         }
 
         function animateCooldown(player, duration) {
@@ -204,39 +198,43 @@ server_template = Template("""\
                 var ws = new WebSocket("ws://{{wsaddr}}/ws/{{cooldown}}/{{register}}");
                 ws.onopen = function() {
                     console.log("Websocket connection open");
-                    showText("Waiting for players to join...");
                 };
                 ws.onmessage = function(e) { 
                     var data = JSON.parse(e.data);
                     console.log("Got data", data);
 
-                    if (data.command == 'log') {
-                        console.log(data.message);
-                        return;
-                    }
-
-                    if (data.command == 'player') {
+                    switch (data.command) {
+                    case 'show':
+                        showText(data.text);
+                        break;
+                    case 'player':
+                        console.log("Adding player");
                         addPlayer(data.color, data.team_name);
+                        break;
+                    case 'countdown':
+                        console.log("Countdown");
+                        setTimeout(countdown(data.wait_text, data.done_text, data.duration), 1000);
+                        break;
+                    case 'buzz':
+                        console.log("Buzzing");
+                        if (data.siren || true) {
+                            document.getElementById('siren').play();
+                        }
+                        showText(data.team_name);
+                        if (data.cooldown)
+                            animateCooldown(data.team_name, data.cooldown * 1000);
+                        document.body.style.backgroundColor = data.color;
+                        if (data.reset) {
+                            setTimeout(function() {
+                                showText(data.reset_text || "Get ready...");
+                                document.body.style.backgroundColor = 'black';
+                            }, data.reset);
+                        }
+                        break;
+                    default:
+                        console.log("Unknown command");
+                        break;
                     }
-
-                    if (data.command == 'join') {
-                        document.receiving = false;
-                        console.log("Setting timeout" + data.duration);
-                        setTimeout(countdown(data.duration), 1000);
-                        return;
-                    }
-
-                    if (!document.receiving) {
-                        console.log("Cooldown ignore")
-                        return;
-                    }
-
-                    document.receiving = false;
-                    siren();
-                    showText(data.team_name);
-                    animateCooldown(data.team_name, data.cooldown * 1000);
-                    document.body.style.backgroundColor = data.color;
-                    setTimeout(reset, 2000);  // Reset color background
                 };
                 ws.onclose = function() { 
                     console.log("Closing websocket connection");
@@ -285,17 +283,18 @@ async def answer_page(request):
     return HTMLResponse('<div>Ok</div>')
 
 
-@app.route('/host/{cooldown}')
+# @app.route('/host/{cooldown}')
 @app.route('/host/{cooldown}/{register}')
 async def server_page(request):
     cooldown = request.path_params['cooldown']
-    register = request.path_params.get('register', 123)
+    register = request.path_params['register']
     return HTMLResponse(server_template.render(cooldown=cooldown,
                                                register=register,
                                                address='http://pigioco',
                                                wsaddr=request.url.netloc))
 
 
+#@app.websocket_route('/ws/{cooldown}')
 @app.websocket_route('/ws/{cooldown}/{register}')
 async def process_ws(websocket):
     await websocket.accept()
@@ -307,16 +306,30 @@ async def process_ws(websocket):
     accepting_duration = int(websocket.path_params['register'])
     accepting_time = time.time() + accepting_duration
     await websocket.send_json({
-        'command': 'join',
+        'command': 'countdown',
         'duration': accepting_duration,
+        'wait_text': 'Waiting for player
     })
 
     cooldown = int(websocket.path_params['cooldown'])
     # print("WEBSOCKET REQUEST", cooldown)
     cooldowns = {}
 
-
     # Current team being displayed
+    '''
+    case 'show':
+        showText(data.text);
+        break;
+    case 'player':
+        console.log("Adding player");
+        addPlayer(data.color, data.team_name);
+        break;
+    case 'countdown':
+        console.log("Countdown");
+        setTimeout(countdown(data.wait_text, data.done_text, data.duration), 1000);
+        break;
+    case 'buzz':
+    '''
 
     # Process incoming messages
     while True:
