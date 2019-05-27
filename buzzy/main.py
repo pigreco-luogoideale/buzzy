@@ -1,6 +1,6 @@
-# TODO
-# - Interfaccia host
-# - Sul server
+# Console per admin
+# Responsive se diventa alta e stretta
+# Server-driven
 
 import time
 import redis
@@ -151,20 +151,18 @@ server_template = Template("""\
         function showText(msg) {
             document.getElementById("display").innerText = msg;
         }
-        function reset() {
-            showText("Get ready...");
-            document.body.style.backgroundColor = 'black';
-            document.receiving = true;
-        }
-        function countdown(duration) {
+        function countdown(wait_text, done_text, duration) {
             return function() {
-                if (duration < 0) {
-                    document.receiving = true;
-                    showText("Get ready...");
+                if (duration < 1) {
+                    showText(done_text);
                     return;
                 }
-                showText("Waiting players, " + duration + " seconds left. {{address}}");
-                setTimeout(countdown(duration-1), 1000);
+                var text = String(wait_text);
+                text = text.replace("%%", String(duration));
+                console.log("Writing", wait_text, typeof(wait_text));
+                console.log(text, typeof(text));
+                showText(text);
+                setTimeout(countdown(wait_text, done_text, duration-1), 1000);
             };
         }
         function addPlayer(color, team_name) {
@@ -184,11 +182,7 @@ server_template = Template("""\
             console.log("Registered team", color, team_name);
         }
 
-        function siren() {
-            document.getElementById('siren').play();
-        }
-
-        function animateCooldown(player, duration, done) {
+        function animateCooldown(player, duration) {
             var start = null;
             var element = document.getElementById("team_" + player);
 
@@ -199,15 +193,6 @@ server_template = Template("""\
                 element.style.width = (progress * 100) + '%';
                 if (progress <= 1)
                     window.requestAnimationFrame(step);
-                else {
-                /*
-                    var i = document.disabled.indexOf(data.team_name);
-                    if (i > -1) {
-                        document.disabled = document.disabled.slice(0, i).concat(document.disabled.slice(i+1, document.disabled.length));
-                        console.log("Disabled is now", document.disabled);
-                    }
-                */
-                }
             }
             window.requestAnimationFrame(step);
         }
@@ -215,52 +200,45 @@ server_template = Template("""\
         function runWebsockets() {
             if ("WebSocket" in window) {
                 var ws = new WebSocket("ws://{{wsaddr}}/ws/{{cooldown}}/{{register}}");
-                document.disabled = [];
                 ws.onopen = function() {
                     console.log("Websocket connection open");
-                    showText("Waiting for players to join...");
                 };
                 ws.onmessage = function(e) { 
                     var data = JSON.parse(e.data);
                     console.log("Got data", data);
 
-                    if (data.command == 'log') {
-                        console.log(data.message);
-                        return;
-                    }
-
-                    if (data.command == 'player') {
+                    switch (data.command) {
+                    case 'show':
+                        showText(data.text);
+                        break;
+                    case 'player':
+                        console.log("Adding player");
                         addPlayer(data.color, data.team_name);
-                    }
-
-                    if (data.command == 'join') {
-                        document.receiving = false;
-                        console.log("Setting timeout" + data.duration);
-                        setTimeout(countdown(data.duration), 1000);
-                        return;
-                    }
-
-                    if (!document.receiving) {
-                        console.log("Cooldown ignore")
-                        return;
-                    }
-
-
-                    /*
-                    for (var j = 0; j < document.disabled.length; j++) {
-                        if (document.disabled[j] == data.team_name) {
-                            return;
+                        break;
+                    case 'countdown':
+                        console.log("Countdown");
+                        setTimeout(countdown(data.wait_text, data.done_text, data.duration), 1000);
+                        break;
+                    case 'buzz':
+                        console.log("Buzzing");
+                        if (data.siren || true) {
+                            document.getElementById('siren').play();
                         }
+                        showText(data.team_name);
+                        if (data.cooldown)
+                            animateCooldown(data.team_name, data.cooldown * 1000);
+                        document.body.style.backgroundColor = data.color;
+                        if (data.reset) {
+                            setTimeout(function() {
+                                showText(data.reset_text || "Get ready...");
+                                document.body.style.backgroundColor = 'black';
+                            }, data.reset * 1000);
+                        }
+                        break;
+                    default:
+                        console.log("Unknown command");
+                        break;
                     }
-                    document.disabled.push(data.team_name);
-                    */
-                    document.receiving = false;
-                    siren();
-                    showText(data.team_name);
-                    // document.disabled.push(data.team_name);
-                    animateCooldown(data.team_name, data.cooldown * 1000);
-                    document.body.style.backgroundColor = data.color;
-                    setTimeout(reset, 4000);  // Reset color background
                 };
                 ws.onclose = function() { 
                     console.log("Closing websocket connection");
@@ -309,18 +287,18 @@ async def answer_page(request):
     return HTMLResponse('<div>Ok</div>')
 
 
-@app.route('/host/{cooldown}')
+# @app.route('/host/{cooldown}')
 @app.route('/host/{cooldown}/{register}')
 async def server_page(request):
     cooldown = request.path_params['cooldown']
-    register = request.path_params.get('register', 123)
+    register = request.path_params['register']
     return HTMLResponse(server_template.render(cooldown=cooldown,
                                                register=register,
-                                               anstime=4000,
                                                address='http://pigioco',
                                                wsaddr=request.url.netloc))
 
 
+#@app.websocket_route('/ws/{cooldown}')
 @app.websocket_route('/ws/{cooldown}/{register}')
 async def process_ws(websocket):
     await websocket.accept()
@@ -329,29 +307,51 @@ async def process_ws(websocket):
     p.subscribe('server')
 
     # Manage teams
-    accepting_duration = int(websocket.path_params['register'])
-    accepting_time = time.time() + accepting_duration
+    join_duration = int(websocket.path_params['register'])
+    join_time = time.time() + join_duration
     await websocket.send_json({
-        'command': 'join',
-        'duration': accepting_duration,
+        'command': 'countdown',
+        'duration': join_duration,
+        'wait_text': 'Waiting for players, %% seconds left.',
+        'done_text': 'Get ready!',
     })
+    # Or use command show to see unlimited text
 
     cooldown = int(websocket.path_params['cooldown'])
-    print("WEBSOCKET REQUEST", cooldown)
+    # print("WEBSOCKET REQUEST", cooldown)
     cooldowns = {}
 
+    # Time each player has to answer, in seconds
+    answer_time = 3
+    accepting_time = time.time()
+
     # Current team being displayed
+    '''
+    case 'show':
+        showText(data.text);
+        break;
+    case 'buzz':
+        Parameters:
+            data.siren, optional, bool (default to true)
+            data.team_name, mandatory, str
+            data.cooldown, mandatory, int (seconds)
+            data.color, mandatory, str
+            data.reset, optional, int (seconds)
+            data.reset_text ["Get ready"]
+    '''
 
     # Process incoming messages
     while True:
         m = p.get_message()
         if m and m['type'] == 'message':
+            print("Got message at time", time.time())
             team = pickle.loads(m['data'])
 
             # When accepting teams, just add team to dict
-            if time.time() < accepting_time:
+            if time.time() < join_time:
                 print("Still accepting...")
                 if team not in cooldowns:
+                    print("Accepted new player", team)
                     await websocket.send_json({
                         'command': 'player',
                         'color': team[0],
@@ -361,23 +361,32 @@ async def process_ws(websocket):
                 await asyncio.sleep(0.1)
                 continue
 
-            # Check if team is valid
-            #if team not in cooldowns:
-            #    continue # Discard message, invalid team
+            # We got a buzz message from a player
+            # Are we accepting answers?
+            if accepting_time >= time.time():
+                print("We are not accepting answers yet, will do at", accepting_time)
+                continue
 
-            # Check cooldown
-            #if time.time() < cooldowns[team]:
-            #    print("Ignoring team on cooldown", time.time(), team)
-            #    continue
+            # Check if team was registered
+            if team not in cooldowns:
+                print("Unknown team", team)
+                continue # Discard message, invalid team
 
-            #cooldowns[team] = time.time() + cooldown
-            #print("Set team cooldown to", cooldowns[team], "now it is", time.time())
+            # Ensure team is not on cooldown
+            if time.time() < cooldowns[team]:
+                print("Ignoring team on cooldown", team)
+                continue
+
+            # Ok, team can answer! Lock answers and set cooldown
+            accepting_time = time.time() + answer_time
+            cooldowns[team] = time.time() + cooldown
 
             await websocket.send_json({
-                'command': 'answer',
+                'command': 'buzz',
                 'color': team[0],
                 'team_name': team[1],
-                'cooldown': cooldown,
+                'cooldown': cooldown,  # Player goes in cooldown
+                'reset': answer_time,  # Wait some time before resetting color
             })
         await asyncio.sleep(0.1)
     await websocket.close()

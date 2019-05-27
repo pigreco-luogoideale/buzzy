@@ -20,7 +20,7 @@ NetwokManager (on Fedora and likely on Ubuntu as well) will run dnsmasq  when
 sharing a network connection to provide a dhcp server to connected clients.
 To make life easier for the player, we will setup your dnsmasq so that users
 will not have to type `http://10.42.0.1:8000` on their phone, but will just
-type `http://game`. This helps a lot when the audience is non-technical.
+type `http://pi.gioco`. This helps a lot when the audience is non-technical.
 
 1. First, [create and a wifi hotspot](https://gist.github.com/narate/d3f001c97e1c981a59f94cd76f041140)
    and make sure it is working. People will have to connect to it if you don't
@@ -29,11 +29,11 @@ type `http://game`. This helps a lot when the audience is non-technical.
 2. Configure NetworkManager's dnsmasq by creating the following file:
 ```
 # /etc/NetworkManager/dnsmasq-shared.d/hosts.conf
-address=/game/10.42.0.1
+address=/pi.gioco/10.42.0.1
 ```
 
-where `game` is the host name that will be redirected to `10.42.0.1`. Be sure
-to check that `10.42.0.1` is your ip address as well when you run a WiFi
+where `pi.gioco` is the host name that will be redirected to `10.42.0.1`. Be
+sure to check that `10.42.0.1` is your ip address as well when you run a WiFi
 hotspot, or this will not work.
 
 3. Start your hotspot connection:
