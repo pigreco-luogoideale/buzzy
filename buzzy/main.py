@@ -14,7 +14,8 @@ from starlette.responses import HTMLResponse
 from starlette.staticfiles import StaticFiles
 
 
-player_template = Template("""\
+player_template = Template(
+    """\
 <!DOCTYPE html>
 <html>
 <head>
@@ -87,10 +88,12 @@ player_template = Template("""\
         </form>
     </body>
 <html>
-""")
+"""
+)
 
 
-registration_template = Template("""\
+registration_template = Template(
+    """\
 <!DOCTYPE HTML>
 <html>
 <head>
@@ -118,10 +121,12 @@ registration_template = Template("""\
     <button onclick="redirect()">Start</button>
 </body>
 </html>
-""")
+"""
+)
 
 
-server_template = Template("""\
+server_template = Template(
+    """\
 <!DOCTYPE HTML>
 <html>
 <head>
@@ -257,67 +262,73 @@ server_template = Template("""\
     </audio> 
 </body>
 </html>
-""")
+"""
+)
 
 
 app = Starlette()
-app.mount('/static', StaticFiles(directory='static'))
-red = redis.Redis(host='localhost', port=6379)
+app.mount("/static", StaticFiles(directory="static"))
+red = redis.Redis(host="localhost", port=6379)
 
 
-@app.route('/')
+@app.route("/")
 async def registration(request):
     return HTMLResponse(registration_template.render())
 
 
-@app.route('/player/{color}/{team_name}')
+@app.route("/player/{color}/{team_name}")
 async def client_page(request):
-    color = request.path_params['color']
-    team_name = request.path_params['team_name']
-    return HTMLResponse(player_template.render(color=color,
-                                               team_name=team_name))
+    color = request.path_params["color"]
+    team_name = request.path_params["team_name"]
+    return HTMLResponse(player_template.render(color=color, team_name=team_name))
 
 
-@app.route('/answer/{color}/{team_name}')
+@app.route("/answer/{color}/{team_name}")
 async def answer_page(request):
-    color = request.path_params['color']
-    team_name = request.path_params['team_name']
+    color = request.path_params["color"]
+    team_name = request.path_params["team_name"]
     # Send to redis the player info
-    red.publish('server', pickle.dumps((color, team_name)))
-    return HTMLResponse('<div>Ok</div>')
+    red.publish("server", pickle.dumps((color, team_name)))
+    return HTMLResponse("<div>Ok</div>")
 
 
 # @app.route('/host/{cooldown}')
-@app.route('/host/{cooldown}/{register}')
+@app.route("/host/{cooldown}/{register}")
 async def server_page(request):
-    cooldown = request.path_params['cooldown']
-    register = request.path_params['register']
-    return HTMLResponse(server_template.render(cooldown=cooldown,
-                                               register=register,
-                                               address='http://pigioco',
-                                               wsaddr=request.url.netloc))
+    cooldown = request.path_params["cooldown"]
+    register = request.path_params["register"]
+    return HTMLResponse(
+        server_template.render(
+            cooldown=cooldown,
+            register=register,
+            address="http://pigioco.it",
+            wsaddr=request.url.netloc,
+        )
+    )
 
 
-#@app.websocket_route('/ws/{cooldown}')
-@app.websocket_route('/ws/{cooldown}/{register}')
+# @app.websocket_route('/ws/{cooldown}')
+@app.websocket_route("/ws/{cooldown}/{register}")
 async def process_ws(websocket):
     await websocket.accept()
     # Build pubsub object
     p = red.pubsub()
-    p.subscribe('server')
+    p.subscribe("server")
 
     # Manage teams
-    join_duration = int(websocket.path_params['register'])
+    join_duration = int(websocket.path_params["register"])
     join_time = time.time() + join_duration
-    await websocket.send_json({
-        'command': 'countdown',
-        'duration': join_duration,
-        'wait_text': 'Waiting for players, %% seconds left.',
-        'done_text': 'Get ready!',
-    })
+    await websocket.send_json(
+        {
+            "command": "countdown",
+            "duration": join_duration,
+            "wait_text": "Waiting for players, %% seconds left.",
+            "done_text": "Get ready!",
+        }
+    )
     # Or use command show to see unlimited text
 
-    cooldown = int(websocket.path_params['cooldown'])
+    cooldown = int(websocket.path_params["cooldown"])
     # print("WEBSOCKET REQUEST", cooldown)
     cooldowns = {}
 
@@ -326,7 +337,7 @@ async def process_ws(websocket):
     accepting_time = time.time()
 
     # Current team being displayed
-    '''
+    """
     case 'show':
         showText(data.text);
         break;
@@ -338,25 +349,23 @@ async def process_ws(websocket):
             data.color, mandatory, str
             data.reset, optional, int (seconds)
             data.reset_text ["Get ready"]
-    '''
+    """
 
     # Process incoming messages
     while True:
         m = p.get_message()
-        if m and m['type'] == 'message':
+        if m and m["type"] == "message":
             print("Got message at time", time.time())
-            team = pickle.loads(m['data'])
+            team = pickle.loads(m["data"])
 
             # When accepting teams, just add team to dict
             if time.time() < join_time:
                 print("Still accepting...")
                 if team not in cooldowns:
                     print("Accepted new player", team)
-                    await websocket.send_json({
-                        'command': 'player',
-                        'color': team[0],
-                        'team_name': team[1],
-                    })
+                    await websocket.send_json(
+                        {"command": "player", "color": team[0], "team_name": team[1]}
+                    )
                     cooldowns[team] = 0
                 await asyncio.sleep(0.1)
                 continue
@@ -370,7 +379,7 @@ async def process_ws(websocket):
             # Check if team was registered
             if team not in cooldowns:
                 print("Unknown team", team)
-                continue # Discard message, invalid team
+                continue  # Discard message, invalid team
 
             # Ensure team is not on cooldown
             if time.time() < cooldowns[team]:
@@ -381,16 +390,18 @@ async def process_ws(websocket):
             accepting_time = time.time() + answer_time
             cooldowns[team] = time.time() + cooldown
 
-            await websocket.send_json({
-                'command': 'buzz',
-                'color': team[0],
-                'team_name': team[1],
-                'cooldown': cooldown,  # Player goes in cooldown
-                'reset': answer_time,  # Wait some time before resetting color
-            })
+            await websocket.send_json(
+                {
+                    "command": "buzz",
+                    "color": team[0],
+                    "team_name": team[1],
+                    "cooldown": cooldown,  # Player goes in cooldown
+                    "reset": answer_time,  # Wait some time before resetting color
+                }
+            )
         await asyncio.sleep(0.1)
     await websocket.close()
 
 
-if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=8000, log_level='debug', reload=True)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="debug", reload=True)
