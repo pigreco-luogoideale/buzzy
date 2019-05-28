@@ -1,7 +1,3 @@
-# Console per admin
-# Responsive se diventa alta e stretta
-# Server-driven
-
 import time
 import redis
 import pickle
@@ -105,6 +101,25 @@ registration_template = Template(
             background-color: black;
             color: white;
         }
+        .color-picker {
+            margin: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            font-size: 0;
+            list-style: none;
+            padding: 0px;
+            margin: 0px;
+        }
+        .centered {
+            width: 100%;
+            text-align: center;
+            margin: 10px;
+        }
+        .selector { width: 25%; height: 100px; }
+        {% for color in colors %}
+        .{{color}}-bg { background-color: {{color}} }
+        {% endfor %}
+        .hidden { display: none; }
     </style>
     <script type="text/javascript">
         function redirect(msg) {
@@ -112,13 +127,32 @@ registration_template = Template(
             var name = document.getElementById("name").value.replace(/\s+/g, '');
             window.location.href = "/player/" + color + "/" + name;
         }
+        function pick(obj) {
+            document.getElementById("color").value = obj.innerText;
+            document.getElementById("colortitle").style.color = obj.innerText;
+        }
     </script>
 </head>
 <body>
     <h1>Registrations are open!</h1>
-    <div><label>Team color: </label> <input id="color" placeholder="e.g. red, magenta, yellow"></div>
-    <div><label>Team name: </label> <input id="name"> </div>
-    <button onclick="redirect()">Start</button>
+    <div class='centered'>
+        <h2>Team Name</h2>
+        <input id="name">
+    </div>
+    <div class='centered'>
+        <h2 id='colortitle'>Team Color</h2>
+        <ul class='color-picker'>
+            {% for color in colors %}
+            <li class='{{color}}-bg selector' onClick="pick(this)">{{color}}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div class='hidden'>
+        <input id="color" placeholder="e.g. red, magenta, yellow"></div>
+    </div>
+    <div class='centered'>
+        <button onclick="redirect()">Start</button>
+    </div>
 </body>
 </html>
 """
@@ -273,7 +307,7 @@ red = redis.Redis(host="localhost", port=6379)
 
 @app.route("/")
 async def registration(request):
-    return HTMLResponse(registration_template.render())
+    return HTMLResponse(registration_template.render(colors=['maroon', 'red', 'orange', 'yellow', 'olive', 'green', 'lime', 'teal', 'aqua', 'blue', 'navy', 'cyan', 'pink', 'fuchsia', 'purple', 'gray']))
 
 
 @app.route("/player/{color}/{team_name}")
